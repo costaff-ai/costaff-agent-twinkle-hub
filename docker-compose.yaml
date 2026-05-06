@@ -1,0 +1,42 @@
+services:
+  agent-twinkle-hub:
+    build:
+      context: ./agent
+    container_name: costaff-agent-twinkle-hub
+    restart: on-failure
+    ports:
+      - "8081:8081"
+    environment:
+      - PORT=8081
+      - PUBLIC_HOST=costaff-agent-twinkle-hub
+      - TWINKLE_HUB_EXTERNAL_MCP_URL=${TWINKLE_HUB_EXTERNAL_MCP_URL:-https://api.twinkleai.tw/mcp/}
+      - TWINKLE_HUB_API_KEY=${TWINKLE_HUB_API_KEY}
+      - MCP_TWINKLE_HUB_LOCAL_URL=http://costaff-mcp-twinkle-hub:8083/mcp
+      - TWINKLE_HUB_AGENT_MCP_URLS=${TWINKLE_HUB_AGENT_MCP_URLS:-}
+      - WORKSPACE_DIR=/app/data
+      - SHARED_DIR=/app/data/shared
+      - COSTAFF_SHARED_DIR_TWINKLE_HUB=/app/data/shared/costaff-agent-twinkle-hub
+      - AGENT_WORKSPACE_DIR_TWINKLE_HUB=/app/data
+      - COSTAFF_AGENT_MODEL_PROVIDER=${COSTAFF_AGENT_MODEL_PROVIDER:-gemini}
+      - TWINKLE_HUB_AGENT_MODEL=${TWINKLE_HUB_AGENT_MODEL:-gemini-2.5-flash}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - LITELLM_MODEL_NAME=${LITELLM_MODEL_NAME:-}
+      - LITELLM_API_BASE=${LITELLM_API_BASE:-}
+      - LITELLM_API_KEY=${LITELLM_API_KEY:-}
+    volumes:
+      - ./workspace:/app/data
+    depends_on:
+      - costaff-mcp-twinkle-hub
+
+  costaff-mcp-twinkle-hub:
+    build:
+      context: ./mcp
+    container_name: costaff-mcp-twinkle-hub
+    restart: on-failure
+    environment:
+      - MCP_TWINKLE_HUB_PORT=8083
+      - WORKSPACE_DIR=/app/data
+      - SHARED_DIR=/app/data/shared
+      - COSTAFF_SHARED_DIR_TWINKLE_HUB=/app/data/shared/costaff-agent-twinkle-hub
+    volumes:
+      - ./workspace:/app/data

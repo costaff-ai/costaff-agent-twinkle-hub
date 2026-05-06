@@ -1,0 +1,11 @@
+.env
+.env.bak
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+# Local-dev workspace bind mount target — production uses CLI-injected mounts
+workspace/
+# Local-dev compose overrides
+docker-compose.override.yaml
+docker-compose.override.yml

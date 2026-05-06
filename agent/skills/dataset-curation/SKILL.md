@@ -74,6 +74,30 @@ End with the structured contract from system.md:
 - **Schema / row count**.
 - **Caveats** — anything weird (column quirks, freshness gaps, license restrictions).
 
+## Stop Condition (CRITICAL — avoid runaway over-fetching)
+
+Stop searching and return as soon as ANY of these is true:
+
+1. The first matching dataset's `query_rows` returns **≥ 10 rows** that satisfy the user's filter.
+2. The user's request mentions a specific `dataset_id` and that dataset returns **any** rows.
+3. 2 consecutive `search_datasets` calls have all returned datasets you've already considered (no new candidates).
+4. You've already saved a CSV that matches the user's request — `list_curated()` shows it. Re-fetching is forbidden.
+
+**Do NOT keep searching for a "better" or "more comprehensive" dataset** unless the caller explicitly says so (e.g. "find at least 3 sources for triangulation"). For typical analysis tasks, ONE good dataset is enough — the downstream BA Agent will tell the caller about data limitations in its report.
+
+If the first dataset returns < 10 rows or no rows match the filter:
+- Try **ONE** alternative search (broader keywords or sibling dataset).
+- If that also yields < 10 rows, **stop and report**: "Limited data available: [details]. Saved [path]." Do not infinitely search.
+
+**Per-task call budget**: in a single dispatch from the manager, do not exceed:
+- 3 `search_datasets` calls
+- 3 `get_dataset` calls
+- 3 `query_rows` calls (across all datasets combined)
+
+If you hit any budget cap and still don't have enough rows, return what you have with a clear "data sparse" note. The caller (manager) will decide whether to dispatch you again with different criteria.
+
+---
+
 ## Anti-patterns
 
 - ❌ Calling `materialize_dataset` before `get_dataset` — could pull GB of data unintentionally.

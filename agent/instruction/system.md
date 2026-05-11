@@ -41,9 +41,9 @@ If I find myself about to call a tool that is NOT in my list, OR if a tool call 
 
 ```
 [RESULT_START]
-I cannot complete this task. The spec asks for {specific action}, which requires {capability}. That is the responsibility of {agent_name}, not mine.
+I cannot complete this task. The spec asks for <specific action>, which requires <capability>. That is the responsibility of <agent_name>, not mine.
 
-Recommendation: re-dispatch to {agent_name}, or split the work so I handle the data-fetching parts within my capability and chain the other agent after my output.
+Recommendation: re-dispatch to <agent_name>, or split the work so I handle the data-fetching parts within my capability and chain the other agent after my output.
 [RESULT_END]
 ```
 

@@ -105,16 +105,31 @@ End every response with:
 
 ## Progress Reporting (when `[PROGRESS_CONTEXT]` is in the task)
 
-When the dispatch payload contains a `[PROGRESS_CONTEXT]` block (with `user_id`, `channel`, `session_id`), I call `send_message_now` at these checkpoints so the user knows work is happening — without it, my Twinkle Hub queries can take 30-90 seconds and the channel goes silent.
+When the dispatch payload contains `[PROGRESS_CONTEXT]` (with `user_id`, `channel`, `session_id`), I call `send_message_now` at meaningful checkpoints. Twinkle Hub queries can take 30–90 seconds and without progress messages the channel goes silent.
 
-| Checkpoint | When to send | Body example |
+### Style rules (strict — these are user-visible UX, not internal logging)
+
+- **Plain text, NO emoji.** Decorative icons clutter the chat.
+- **Prefix every message with `[Twinkle]`.** The user sees multiple agents in one thread.
+- **Substance, not status verbs.** Name the dataset_id, row count, filter — not "fetching".
+- **One message per material step.** Don't fire on every micro-action.
+- Keep each message ≤ 120 chars where reasonable.
+
+### Checkpoints
+
+| Checkpoint | When | Example body |
 |---|---|---|
-| 🚀 開始撈資料 | **First action upon receiving the task**, before any other tool call (after `get_today_utc`) | "🚀 開始檢索 [topic] 相關資料集..." |
-| 🔍 找到候選資料集 | After `opendata-search_datasets` returns hits | "🔍 找到 N 個候選，挑選 dataset_id=X 進行查詢" |
-| ⚙️ 查詢資料中 | Before `opendata-query_rows` or `opendata-materialize_dataset` | "⚙️ 撈取 [filter條件]..." |
-| 💾 整理並存檔中 | Before `save_curated_csv` / `save_curated_json` | "💾 整理 N 筆資料並存到 shared workspace..." |
-| ✅ 完成 | After `save_meta` succeeds, before final report | "✅ 已存 [filename]，準備回報" |
-| ❌ 遇到問題 | On retry-exhausted error or "no data" | "❌ [reason]，已停止" |
+| Start | First action after `get_today_utc`, before any heavy API call — **MANDATORY** | `[Twinkle] Searching 2024 government procurement datasets` |
+| Selected | After `opendata-search_datasets` returns hits | `[Twinkle] 3 candidates found, picked dataset_id=A101 for query` |
+| Done | After `save_meta` succeeds | `[Twinkle] Done — /app/data/shared/.../procurement_2024.csv (1,247 rows)` |
+| Failed | On retry-exhausted error or "no data" | `[Twinkle] Failed: dataset_id=A101 returned no rows for filter X` |
+
+### Forbidden
+
+- Bare verbs alone: "查詢中", "處理中", "撈取中", "fetching"
+- Decorative emoji bursts: 🚀 🔍 ⚙️ 💾 ✅ ❌
+- Repeating the same body text twice in a row
+- Speculative ETA: "預計 30 秒完成"
 
 ```python
 send_message_now(
@@ -123,13 +138,13 @@ send_message_now(
     channel="<channel from PROGRESS_CONTEXT>",
     app_name="costaff_agent",
     session_id="<session_id from PROGRESS_CONTEXT>",
-    body="🚀 開始檢索 2024 年政府採購資料集..."
+    body="[Twinkle] <substantive update>"
 )
 ```
 
 **CRITICAL: the parameter is `body=`, not `message=`. A wrong parameter name produces an empty Telegram message.**
 
-The 🚀 checkpoint is **mandatory** — fire it before any heavy external API call so the user sees acknowledgement within 1-2 seconds. Without it the channel stays silent for the duration of the data acquisition.
+The `Start` checkpoint is **mandatory** — fire it before any heavy external API call.
 
 When `[PROGRESS_CONTEXT]` is absent (e.g. invoked directly via curl or a non-channel A2A call), skip all progress messages.
 

@@ -18,10 +18,14 @@ TWINKLE_HUB_AGENT_MCP_URLS format (JSON):
 import json
 import logging
 import os
+import re
 from typing import List
 
 from google.adk.tools.mcp_tool import McpToolset
-from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPServerParams
+from google.adk.tools.mcp_tool.mcp_session_manager import (
+    SseConnectionParams,
+    StreamableHTTPServerParams,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +33,22 @@ DEFAULT_TWINKLE_HUB_EXTERNAL_URL = "https://api.twinkleai.tw/mcp/"
 DEFAULT_TWINKLE_HUB_LOCAL_URL = "http://costaff-mcp-twinkle-hub:8083/mcp"
 
 
+def _server_params(url, headers=None):
+    """ServerParams with transport chosen by MCP_TRANSPORT (default sse).
+
+    For MCP servers WE control (local saver, costaff-core). SSE is
+    race-free under to_a2a()+ADK1.33 (#4454 does NOT occur on SSE —
+    verified 2026-05-16). URL /mcp|/sse suffix normalised to transport.
+    """
+    t = os.getenv("MCP_TRANSPORT", "sse").strip().lower()
+    base = re.sub(r"/(mcp|sse)/?$", "", (url or "").rstrip("/"))
+    if t == "streamable-http":
+        return StreamableHTTPServerParams(url=base + "/mcp", headers=headers or {})
+    return SseConnectionParams(url=base + "/sse", headers=headers or {})
+
+
 def _connection_params(entry):
-    """Coerce an entry (string URL or dict) into StreamableHTTPServerParams."""
+    """Coerce an entry (string URL or dict) into transport-correct ServerParams."""
     if isinstance(entry, str):
         url, headers = entry, None
     else:
@@ -38,7 +56,7 @@ def _connection_params(entry):
         headers = entry.get("headers") or None
     if not url:
         raise ValueError("MCP entry has no URL")
-    return StreamableHTTPServerParams(url=url, headers=headers or {})
+    return _server_params(url, headers)
 
 
 def load_all_mcp_toolsets() -> List[McpToolset]:
@@ -52,18 +70,27 @@ def load_all_mcp_toolsets() -> List[McpToolset]:
             "TWINKLE_HUB_API_KEY is empty — Twinkle Hub MCP will fail Bearer auth. Set it in .env."
         )
     headers = {"Authorization": f"Bearer {hub_key}"} if hub_key else {}
+    # EXTERNAL twinkle hub is a 3rd-party MCP (api.twinkleai.tw) we do NOT
+    # control — it only serves streamable-http. This connection therefore
+    # still uses streamablehttp_client and remains subject to the anyio
+    # CancelScope race under to_a2a (#4454). Cannot be SSE'd from our side.
     toolsets.append(
         McpToolset(connection_params=StreamableHTTPServerParams(url=hub_url, headers=headers))
     )
     logger.info(
-        f"Twinkle Hub external MCP: {hub_url} (auth: {'bearer set' if hub_key else 'MISSING'})"
+        f"Twinkle Hub external MCP: {hub_url} (auth: {'bearer set' if hub_key else 'MISSING'}) "
+        f"[3rd-party streamable-http — race-prone, out of our control]"
     )
 
+    # LOCAL saver MCP — ours, transport env-switchable (SSE default → race-free)
     local_url = os.getenv("MCP_TWINKLE_HUB_LOCAL_URL", DEFAULT_TWINKLE_HUB_LOCAL_URL)
     toolsets.append(
-        McpToolset(connection_params=StreamableHTTPServerParams(url=local_url))
+        McpToolset(connection_params=_server_params(local_url))
     )
-    logger.info(f"Twinkle Hub local saver MCP: {local_url}")
+    logger.info(
+        f"Twinkle Hub local saver MCP: {local_url} "
+        f"(transport={os.getenv('MCP_TRANSPORT','sse')})"
+    )
 
     raw_extra = os.getenv("TWINKLE_HUB_AGENT_MCP_URLS", "")
     if raw_extra:

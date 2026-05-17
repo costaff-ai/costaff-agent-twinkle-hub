@@ -34,13 +34,13 @@ DEFAULT_TWINKLE_HUB_LOCAL_URL = "http://costaff-mcp-twinkle-hub:8083/mcp"
 
 
 def _server_params(url, headers=None):
-    """ServerParams with transport chosen by MCP_TRANSPORT (default sse).
+    """ServerParams with transport chosen by MCP_TRANSPORT (default streamable-http).
 
     For MCP servers WE control (local saver, costaff-core). SSE is
     race-free under to_a2a()+ADK1.33 (#4454 does NOT occur on SSE —
     verified 2026-05-16). URL /mcp|/sse suffix normalised to transport.
     """
-    t = os.getenv("MCP_TRANSPORT", "sse").strip().lower()
+    t = os.getenv("MCP_TRANSPORT", "streamable-http").strip().lower()
     base = re.sub(r"/(mcp|sse)/?$", "", (url or "").rstrip("/"))
     if t == "streamable-http":
         return StreamableHTTPServerParams(url=base + "/mcp", headers=headers or {})
@@ -89,7 +89,7 @@ def load_all_mcp_toolsets() -> List[McpToolset]:
     )
     logger.info(
         f"Twinkle Hub local saver MCP: {local_url} "
-        f"(transport={os.getenv('MCP_TRANSPORT','sse')})"
+        f"(transport={os.getenv('MCP_TRANSPORT','streamable-http')})"
     )
 
     raw_extra = os.getenv("TWINKLE_HUB_AGENT_MCP_URLS", "")

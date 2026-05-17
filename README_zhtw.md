@@ -166,6 +166,8 @@ costaff agent restart twinkle-hub
 
 CLI 會自動 clone repo、產生 `compose-fragment.yaml`、把 agent 註冊進 `config.json`、串到共享工作區網路。
 
+**接線模式 — 此 agent 請勿加 `--enable-transfer`。** 它以 **AgentTool**（預設、穩定契約）註冊：Manager 像呼叫 function 一樣呼叫它並取得乾淨的文字結果。`--enable-transfer` **僅**用於 sub-agent 必須接收**多模態圖片輸入**的 agent — 它會把**整個** Manager 切換成 ADK transfer 模式並帶上 session 歷史（見 `costaff-agent-nutrition`）。本 agent 為文字／資料任務型，維持預設即正確且為建議做法。
+
 ---
 
 ## 環境變數

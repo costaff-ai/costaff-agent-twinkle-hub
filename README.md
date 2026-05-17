@@ -166,6 +166,8 @@ costaff agent restart twinkle-hub
 
 The CLI clones the repo, generates `compose-fragment.yaml`, registers the agent in `config.json`, and wires it into the shared workspace network automatically.
 
+**Wiring mode — do NOT pass `--enable-transfer` for this agent.** It is registered as an **AgentTool** (the default, stable contract): the Manager calls it like a function and receives a clean text result. `--enable-transfer` exists *only* for agents whose sub-agent must receive **multimodal image input** — it switches the *entire* Manager into ADK transfer mode and carries session history (see `costaff-agent-nutrition`). This is a text/data-task agent, so the default is correct and recommended.
+
 ---
 
 ## Environment Variables

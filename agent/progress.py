@@ -84,6 +84,7 @@ def _post_report(pc, step, status):
                 "session_id": pc["session_id"],
                 "step": step,
                 "status": status,
+                "agent": pc.get("agent") or "",
                 "channel": pc["channel"],
                 "user_id": pc["user_id"],
             },
@@ -121,8 +122,12 @@ async def before_model_callback(callback_context, llm_request):
             "session_id": sid,
             "channel": g["channel"] or "telegram",
             "user_id": g["user_id"] or "",
+            "agent": getattr(callback_context, "agent_name", "") or "",
         }
-        logger.info(f"[panel] armed → {sid} ch={g['channel']}")
+        logger.info(
+            f"[panel] armed → {sid} ch={g['channel']} "
+            f"agent={st['_pc']['agent']}"
+        )
     except Exception:
         logger.info("[panel] before_model failed", exc_info=True)
     return None
@@ -136,6 +141,8 @@ async def before_tool_callback(tool, args, tool_context):
             return None
         pc = _pc_from_state(tool_context)
         if pc:
+            if not pc.get("agent"):
+                pc["agent"] = getattr(tool_context, "agent_name", "") or ""
             await _report(pc, name, "doing")
     except Exception:
         logger.info("[panel] before_tool failed", exc_info=True)

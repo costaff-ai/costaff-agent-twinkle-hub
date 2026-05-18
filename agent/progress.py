@@ -39,11 +39,10 @@ _RE = {
     "session_id": re.compile(r"^\s*session_id\s*=\s*(.+?)\s*$", re.M),
 }
 
-# Plumbing the user should not see as work lines (the 4 shared core
-# tools + report_step itself). An agent's real verbs are NOT in this set
-# → each shows. Harmless for agents that don't have these tools.
+# Plumbing the user should not see as work lines. An agent's real verbs
+# are NOT in this set → each shows. send_message_now is handled
+# specially (folded into the panel as a section), so it is NOT here.
 _PLUMBING = {
-    "send_message_now",
     "add_task_comment",
     "move_to_shared",
     "list_data_files",
@@ -102,6 +101,16 @@ async def _report(pc, step, status):
         logger.info("[panel] report failed", exc_info=True)
 
 
+# Sub-agents narrate progress via send_message_now (per their
+# instruction, prefix "[Agent] ..."). While a panel is armed we fold
+# that text into the panel as a section divider and SKIP the standalone
+# send, so the user sees one self-updating message instead of N pings.
+# The real task result is delivered separately by the executor (A2A
+# response → dispatch_notification), not by send_message_now.
+_SEND_TOOL = "send_message_now"
+_SEND_SKIP_RESULT = "ok"
+
+
 async def before_model_callback(callback_context, llm_request):
     """Parse the real PROGRESS_CONTEXT once → callback state."""
     try:
@@ -137,12 +146,24 @@ async def before_tool_callback(tool, args, tool_context):
     """Each real tool call → a panel line in 'doing'."""
     try:
         name = getattr(tool, "name", "") or ""
+        pc = _pc_from_state(tool_context)
+        if pc and not pc.get("agent"):
+            pc["agent"] = getattr(tool_context, "agent_name", "") or ""
+
+        if name == _SEND_TOOL:
+            if not pc:
+                return None  # no panel → let it send normally
+            body = ""
+            if isinstance(args, dict):
+                body = (args.get("body") or args.get("message")
+                        or args.get("text") or "")
+            if body and body.strip():
+                await _report(pc, body.strip(), "section")
+            return _SEND_SKIP_RESULT  # truthy → skip the standalone send
+
         if name in _PLUMBING:
             return None
-        pc = _pc_from_state(tool_context)
         if pc:
-            if not pc.get("agent"):
-                pc["agent"] = getattr(tool_context, "agent_name", "") or ""
             await _report(pc, name, "doing")
     except Exception:
         logger.info("[panel] before_tool failed", exc_info=True)
@@ -153,7 +174,7 @@ async def after_tool_callback(tool, args, tool_context, tool_response):
     """Each real tool finish → flip its line to 'done' / 'failed'."""
     try:
         name = getattr(tool, "name", "") or ""
-        if name in _PLUMBING:
+        if name in _PLUMBING or name == _SEND_TOOL:
             return None
         pc = _pc_from_state(tool_context)
         if not pc:

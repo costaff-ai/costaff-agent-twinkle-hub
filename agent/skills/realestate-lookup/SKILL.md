@@ -28,30 +28,63 @@ Search hits will vary, but the agencies to prefer are:
 - **各直轄市政府地政局** — local supplementary data, building permits, urban renewal.
 - **台北市 / 新北市 政府都市發展局** — building permits (使用執照).
 
-## Recipe: median sale price for a district
+## Extraction principle (decide BEFORE any query — this prevents slow over-fetching)
+
+`limit` is a **safety ceiling, never the way you answer the question**.
+First classify the request's intent, then the intent dictates the
+strategy. Emit ONE plan line before the first `opendata-query_rows`:
+
+> `plan: intent=<trend|sample|full> → strategy=<aggregate-SQL|limit N|materialize>; dataset=<id>; queries=<n>`
+
+| Intent (keywords) | Strategy | What to send |
+|---|---|---|
+| **trend / 走勢 / 趨勢 / 分布 / 平均 / 中位數 / 比較 / by 月 / by 區** | **aggregate in SQL — never raw rows** | one `query_rows` whose `where` ends with `GROUP BY` + `ORDER BY`, selecting `median/avg/count`. Returns dozens of rows that cover the **whole** period. No meaningful `limit` (set it high, e.g. 5000, purely as a ceiling). |
+| **sample / 看長相 / 幾筆範例 / 某一筆** | small `limit` (10–50) | a plain filtered `query_rows` — small IS correct here. |
+| **full / 整包資料給下游 / 完整 CSV** | `materialize_dataset` (paginates to completeness) | never a capped `query_rows`. |
+
+The old failure: pulling `limit=500` raw rows for a "房價走勢" request
+analyses a non-representative slice. A 2-year district trend is
+thousands of rows; the **aggregate** path returns ~24 monthly rows that
+represent all of them.
+
+### Plan first, then batch (don't explore-as-you-go)
+
+1. `search_datasets` once → pick the dataset.
+2. `get_dataset` once → read `schema.columns`. **Confirm schema only once**; do not re-`get_dataset` the same id.
+3. Decide ALL the queries you need up front. If they are independent
+   (e.g. several districts, or raw-sample + aggregate), issue them as
+   **parallel tool calls in a single turn** (one round-trip out, one
+   back) instead of one query per turn. The discovery prefix
+   (search→get_dataset) is inherently serial; the queries after it
+   are not — batch them.
+
+## Recipe: district price **trend** (the common BA request)
 
 ```
+plan: intent=trend → strategy=aggregate-SQL; dataset=<lvr-trades>; queries=1
+
 1. opendata-search_datasets(query="實價登錄", domain="realestate_land", limit=10)
-   → pick the most recent quarterly dataset by 內政部.
-
-2. opendata-get_dataset(dataset_id=...)
-   → confirm schema. Common columns include (English actual names vary
-     by dataset — always read schema.columns):
-       - 鄉鎮市區 / district
-       - 交易年月日 / transaction_date
-       - 總價元 / total_price_twd
-       - 建物移轉總面積平方公尺 / area_sqm
-       - 主要用途 / usage
-       - 交易標的 / property_type
-
+2. opendata-get_dataset(dataset_id=...)   # read schema.columns ONCE
 3. opendata-query_rows(
      dataset_id=...,
-     where="\"鄉鎮市區\" ILIKE '%大安%' AND \"交易年月日\" >= '11301' "
-           "ORDER BY \"交易年月日\" DESC",
-     limit=500,
+     where="\"鄉鎮市區\" ILIKE '%中山%' "
+           "AND \"交易年月日\" >= '1130519' "
+           "GROUP BY substr(\"交易年月日\",1,5) "
+           "ORDER BY substr(\"交易年月日\",1,5)",
+     columns="substr(\"交易年月日\",1,5) AS ym, "
+             "count(*) AS deals, "
+             "median(CAST(\"總價元\" AS DOUBLE)) AS median_price",
+     limit=5000,   # ceiling only — ~24 monthly rows actually return
    )
+4. save_curated_csv + save_meta   # the monthly aggregate IS the deliverable
+```
 
-4. save_curated_csv + save_meta
+## Recipe: raw sample (only when caller wants individual transactions)
+
+```
+plan: intent=sample → strategy=limit 50; dataset=<id>; queries=1
+opendata-query_rows(dataset_id=..., where="\"鄉鎮市區\" ILIKE '%中山%' "
+  "ORDER BY \"交易年月日\" DESC", limit=50)
 ```
 
 ## Recipe: building permit volume by year

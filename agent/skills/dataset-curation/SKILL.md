@@ -25,11 +25,29 @@ analyze / curate Taiwan open data, AND a more specific topical skill
 - Call `get_today_utc()` once. Use the `compact` field (`YYYYMMDD`) for any filename date-stamp later in this task.
 - Do NOT reuse a date from a different conversation — call the tool fresh each task.
 
-### 1. Scope the request
-Identify three things before any tool call:
-- **Topic** → which Twinkle Hub `domain` is the most likely fit? (If unsure, call `opendata-list_domains` once.)
-- **Output shape** → a few filtered rows (`query_rows`) or full dump (`materialize_dataset`)?
-- **Time range / geography** → maps to SQL `WHERE` clauses.
+### 1. Scope the request — classify intent, then plan
+
+`limit` is a **safety ceiling, never the mechanism that answers the
+question**. Before any tool call, classify the request into ONE intent
+and let it pick the strategy:
+
+| Intent (keywords) | Strategy |
+|---|---|
+| **trend / aggregate** — 走勢, 趨勢, 分布, 平均, 中位數, 比較, 統計, by 月/年/區 | **Push the aggregation into SQL** (`GROUP BY` + `count/avg/median`). The small aggregated result covers the FULL dataset — never pull raw rows then "analyse a sample". |
+| **sample / lookup** — 看長相, 幾筆範例, 某一筆, 查一下 | A plain filtered `query_rows` with a **small** `limit` (10–50). Small is correct here. |
+| **full extract** — 整包, 完整 CSV, 給下游做完整分析 | `materialize_dataset` (paginates to completeness). Never a capped `query_rows`. |
+
+Also identify: **Topic** → Twinkle Hub `domain` (call `opendata-list_domains` once if unsure); **time range / geography** → SQL `WHERE`.
+
+**Emit ONE plan line before the first `query_rows`** (so the choice is
+explicit, not a lazy default):
+
+> `plan: intent=<trend|sample|full> → strategy=<aggregate-SQL|limit N|materialize>; dataset=<id|tbd>; queries=<n>`
+
+Then **plan all queries up front and batch the independent ones as
+parallel tool calls in a single turn** (one round-trip out, one back).
+The discovery prefix (search→get_dataset) is serial; the queries after
+schema is known are not — do not explore-one-query-per-turn.
 
 ### 2. Discover
 - `opendata-search_datasets` with focused keywords + `domain` filter. Mandarin keywords usually hit better than English.
@@ -40,8 +58,19 @@ Identify three things before any tool call:
 - `opendata-get_dataset(dataset_id)` — record `schema.columns` (these are the **real** column names you must use in SQL), `row_count`, `update_freq`, `license`.
 - If the dataset has **Chinese display column names** but English `schema.columns` (very common — e.g. `monitormonth` is real, `監測月份` is just a label), use the English ones in any SQL.
 
-### 4. Query (preferred for filtered slices)
-- `opendata-query_rows(dataset_id, where, columns=None, limit=100)`.
+### 4. Query (strategy chosen in step 1)
+- `opendata-query_rows(dataset_id, where, columns=None, limit=100)` —
+  **`limit=100` is only the default ceiling, NOT a target.** Set it per
+  the step-1 intent: aggregate → high ceiling (e.g. 5000), the `GROUP
+  BY` result is what matters; sample → 10–50; full → use
+  `materialize_dataset` instead.
+- **Aggregate (trend) queries:** put the rollup in SQL — pass
+  `columns="<group-expr> AS k, count(*) AS n, median(CAST(\"v\" AS DOUBLE)) AS med"`
+  and end `where` with `GROUP BY <group-expr> ORDER BY <group-expr>`.
+  ~dozens of rows that represent the entire range come back; this is
+  the deliverable, no raw-row dump needed.
+- **Batch independent queries** (multiple districts / sample+aggregate)
+  as parallel calls in one turn once schema is known — don't serialize.
 - **WHERE clause rules:**
   - No `WHERE` keyword in the parameter — just the predicate. e.g. `where="\"年度\" = '113' AND city = 'Taipei'"`.
   - Quote column names with double-quotes if they contain Chinese / special chars.
@@ -78,6 +107,10 @@ End with the structured contract from system.md:
 
 Stop searching and return as soon as ANY of these is true:
 
+0. **trend/aggregate intent**: the single aggregate `query_rows`
+   (with `GROUP BY`) returned its grouped rows — that already covers
+   the whole period. **Done. Do NOT also pull raw rows or re-query.**
+   (The "≥ 10 rows" rule below is for sample/lookup intent only.)
 1. The first matching dataset's `query_rows` returns **≥ 10 rows** that satisfy the user's filter.
 2. The user's request mentions a specific `dataset_id` and that dataset returns **any** rows.
 3. 2 consecutive `search_datasets` calls have all returned datasets you've already considered (no new candidates).

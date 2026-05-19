@@ -9,6 +9,7 @@ extra MCP session (the local-saver McpToolset is removed), which is the
 dominant driver of the to_a2a anyio cancel-scope race (#5729/#4454).
 """
 import csv
+import functools
 import json as json_lib
 import os
 from datetime import datetime, timezone
@@ -21,21 +22,40 @@ COSTAFF_SHARED_DIR_TWINKLE_HUB = os.getenv(
 READ_BYTE_CAP = 200_000  # avoid blowing the agent's context on read-back
 
 
+def _failsafe(fn):
+    """In-process FunctionTools must NOT raise — a raise propagates into
+    ADK and aborts the whole A2A request (the old MCP server contained
+    tool exceptions as result strings; we must too)."""
+    @functools.wraps(fn)
+    def w(*a, **k):
+        try:
+            return fn(*a, **k)
+        except Exception as e:
+            return f"[ERROR] {fn.__name__}: {e}"
+    return w
+
+
 def _ensure_dir(path: str) -> None:
     Path(path).mkdir(parents=True, exist_ok=True)
 
 
 def _safe_my_shared(filename: str) -> Path:
-    """Resolve filename under the agent's own shared slot, blocking traversal."""
-    if filename.startswith("/"):
-        raise ValueError(f"filename must be relative, got absolute: {filename}")
+    """Resolve under the agent's own shared slot, blocking traversal.
+
+    Accepts an absolute path **iff it already resolves inside the shared
+    slot** — the LLM naturally passes back the absolute path returned by
+    save_curated_csv into save_meta; rejecting that outright is what
+    triggered the abort. Anything resolving outside the slot still errors.
+    """
     base = Path(COSTAFF_SHARED_DIR_TWINKLE_HUB).resolve()
-    target = (base / filename).resolve()
+    p = Path(filename)
+    target = (p if p.is_absolute() else base / filename).resolve()
     if not target.is_relative_to(base):
         raise ValueError(f"path escapes shared slot: {filename}")
     return target
 
 
+@_failsafe
 def get_today_utc() -> str:
     """Return today's date in UTC, in two ready-to-use formats.
 
@@ -54,6 +74,7 @@ def get_today_utc() -> str:
     })
 
 
+@_failsafe
 def save_curated_csv(rows_json: str, columns_json: str, filename: str) -> str:
     """Save query results as a CSV under the Twinkle Hub agent's shared slot.
 
@@ -83,6 +104,7 @@ def save_curated_csv(rows_json: str, columns_json: str, filename: str) -> str:
     return str(target)
 
 
+@_failsafe
 def save_curated_json(data_json: str, filename: str) -> str:
     """Save arbitrary JSON data under the Twinkle Hub agent's shared slot.
 
@@ -106,6 +128,7 @@ def save_curated_json(data_json: str, filename: str) -> str:
     return str(target)
 
 
+@_failsafe
 def save_meta(
     csv_filename: str,
     dataset_id: str,
@@ -150,6 +173,7 @@ def save_meta(
     return str(meta_target)
 
 
+@_failsafe
 def list_curated(subdir: str = "") -> str:
     """List files the Twinkle Hub agent has curated to its shared slot.
 
@@ -168,6 +192,7 @@ def list_curated(subdir: str = "") -> str:
     )
 
 
+@_failsafe
 def read_curated(filename: str) -> str:
     """Read back a previously-curated file (size-capped at 200 KB).
 

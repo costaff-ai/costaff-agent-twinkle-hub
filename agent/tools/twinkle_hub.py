@@ -30,6 +30,10 @@ _HUB_URL = os.getenv(
 )
 _HUB_KEY = os.getenv("TWINKLE_HUB_API_KEY", "").strip()
 _TIMEOUT = float(os.getenv("TWINKLE_HUB_CALL_TIMEOUT", "60"))
+# A query_rows call with limit >= this AND no GROUP BY is treated as a
+# "raw bulk pull" → the extraction guard appends a corrective. Small
+# samples below this, and any aggregate (GROUP BY), are untouched.
+_RAW_PULL_LIMIT = int(os.getenv("TWINKLE_HUB_RAW_PULL_LIMIT", "50"))
 
 
 def _result_text(res) -> str:
@@ -97,7 +101,29 @@ async def query_rows(
         args["where"] = where
     if columns:
         args["columns"] = columns
-    return await _call("opendata-query_rows", args)
+    out = await _call("opendata-query_rows", args)
+
+    # Option-2 semi-hard guard: a large raw pull (no GROUP BY, high
+    # limit) is the non-representative-sample antipattern that broke the
+    #房價走勢 task (skill prose alone got ignored). We do NOT block —
+    # small samples (limit < _RAW_PULL_LIMIT) and proper aggregates
+    # (GROUP BY present) pass untouched — but we append a strong,
+    # deterministic corrective so the model self-corrects to an
+    # aggregate query for trend/distribution/average analysis.
+    is_agg = "group by" in (where or "").lower()
+    if not is_agg and limit >= _RAW_PULL_LIMIT and not out.startswith("[ERROR]"):
+        out += (
+            f"\n\n[EXTRACTION GUARD] The above is a RAW row pull "
+            f"(no GROUP BY, limit={limit}). For ANY trend / distribution "
+            f"/ average / 比較 / by-month/by-區 analysis this is a "
+            f"non-representative slice — you MUST instead re-query with "
+            f"SQL aggregation: pass columns=\"<group-expr> AS k, "
+            f"count(*) AS n, median(CAST(\\\"<num>\\\" AS DOUBLE)) AS "
+            f"med\" and end `where` with `GROUP BY <group-expr> ORDER BY "
+            f"<group-expr>`. Keep these raw rows ONLY if the task "
+            f"genuinely wants individual records (a sample/lookup)."
+        )
+    return out
 
 
 async def list_domains() -> str:

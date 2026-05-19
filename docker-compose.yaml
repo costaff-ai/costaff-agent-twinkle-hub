@@ -11,8 +11,8 @@ services:
       - PUBLIC_HOST=costaff-agent-twinkle-hub
       - TWINKLE_HUB_EXTERNAL_MCP_URL=${TWINKLE_HUB_EXTERNAL_MCP_URL:-https://api.twinkleai.tw/mcp/}
       - TWINKLE_HUB_API_KEY=${TWINKLE_HUB_API_KEY}
-      - MCP_TWINKLE_HUB_LOCAL_URL=http://costaff-mcp-twinkle-hub:8083/mcp
-      - TWINKLE_HUB_AGENT_MCP_URLS=${TWINKLE_HUB_AGENT_MCP_URLS:-}
+      - COSTAFF_CORE_API_URL=${COSTAFF_CORE_API_URL:-http://costaff-mcp-costaff:8081}
+      - MCP_SECRET_KEY=${MCP_SECRET_KEY:-}
       - WORKSPACE_DIR=/app/data
       - SHARED_DIR=/app/data/shared
       - COSTAFF_SHARED_DIR_TWINKLE_HUB=/app/data/shared/costaff-agent-twinkle-hub
@@ -23,20 +23,5 @@ services:
       - LITELLM_MODEL_NAME=${LITELLM_MODEL_NAME:-}
       - LITELLM_API_BASE=${LITELLM_API_BASE:-}
       - LITELLM_API_KEY=${LITELLM_API_KEY:-}
-    volumes:
-      - ./workspace:/app/data
-    depends_on:
-      - costaff-mcp-twinkle-hub
-
-  costaff-mcp-twinkle-hub:
-    build:
-      context: ./mcp
-    container_name: costaff-mcp-twinkle-hub
-    restart: on-failure
-    environment:
-      - MCP_TWINKLE_HUB_PORT=8083
-      - WORKSPACE_DIR=/app/data
-      - SHARED_DIR=/app/data/shared
-      - COSTAFF_SHARED_DIR_TWINKLE_HUB=/app/data/shared/costaff-agent-twinkle-hub
     volumes:
       - ./workspace:/app/data

@@ -1,13 +1,15 @@
-"""Plain Python function tools — always available to the LLM
-(unlike SkillToolset, which loads skills on demand).
+"""Native in-process function tools for the Twinkle Hub agent.
 
-To add a new tool:
-    1. Create <tool_name>.py in this folder, defining a function with a
-       clear docstring (the docstring tells the agent when to call this tool).
-    2. Import the function here and add it to __all__.
-    3. In agent.py, import from tools and include it in Agent(tools=[...]).
+These replace two former MCP sessions (the local-saver MCP container and
+the costaff-core extra MCP entry) with zero-MCP-session equivalents:
+  - local_io      : file I/O, runs in-process (ported from old mcp/)
+  - costaff_api   : 4 shared manager-core tools via the costaff httpx shim
 
-Currently empty — placeholder for future plain-Python function tools.
+Fewer concurrent McpToolset sessions ⇒ the to_a2a anyio cancel-scope
+race drops toward zero (see project memory mcp-race-resolution). The
+only remaining McpToolset is the unavoidable 3rd-party Twinkle Hub hub.
 """
+from .costaff_api import load_costaff_api_tools
+from .local_io import load_local_tools
 
-__all__: list = []
+__all__ = ["load_costaff_api_tools", "load_local_tools"]

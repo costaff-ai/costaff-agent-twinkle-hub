@@ -11,5 +11,10 @@ only remaining McpToolset is the unavoidable 3rd-party Twinkle Hub hub.
 """
 from .costaff_api import load_costaff_api_tools
 from .local_io import load_local_tools
+from .twinkle_hub import load_twinkle_hub_tools
 
-__all__ = ["load_costaff_api_tools", "load_local_tools"]
+__all__ = [
+    "load_costaff_api_tools",
+    "load_local_tools",
+    "load_twinkle_hub_tools",
+]

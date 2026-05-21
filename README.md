@@ -1,7 +1,7 @@
 # CoStaff Twinkle Hub Agent
 
 [![Python Version](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![Google ADK](https://img.shields.io/badge/Google%20ADK-latest-orange.svg)](https://github.com/google/adk-python)
+[![Google ADK](https://img.shields.io/badge/Google%20ADK-2.0-orange.svg)](https://github.com/google/adk-python)
 [![MCP](https://img.shields.io/badge/MCP-enabled-green.svg)](https://modelcontextprotocol.io/)
 [![Docker](https://img.shields.io/badge/docker-supported-blue.svg)](https://www.docker.com/)
 [![A2A Protocol](https://img.shields.io/badge/A2A-protocol-violet.svg)](https://github.com/google/A2A)
@@ -40,11 +40,12 @@ CoStaff Manager Agent
         │  A2A Protocol (/.well-known/agent-card.json)
         ▼
 Twinkle Hub Agent  ──►  Twinkle Hub external MCP  ──►  Taiwan open data (19 domains)
-        │              (api.twinkleai.tw/mcp/)
+        │              (api.twinkleai.tw/mcp/, accessed via per-request
+        │               FunctionTool — see "Race resolution" below)
         │
-        └──►  Local saver MCP  ──►  /app/data/shared/costaff-agent-twinkle-hub/
-                                    └─ <domain>__<dataset_id>__<YYYYMMDD>.csv
-                                    └─ <…>.csv.meta.json     (provenance sidecar)
+        └──►  In-process file I/O ──►  /app/data/shared/costaff-agent-twinkle-hub/
+                                       └─ <domain>__<dataset_id>__<YYYYMMDD>.csv
+                                       └─ <…>.csv.meta.json     (provenance sidecar)
 ```
 
 For every task, the agent runs a six-step workflow:
@@ -53,14 +54,14 @@ For every task, the agent runs a six-step workflow:
 2. **Discover** — narrows down to the right Twinkle Hub domain (`opendata-list_domains` + `opendata-search_datasets`).
 3. **Inspect** — confirms dataset schema and freshness (`opendata-get_dataset`).
 4. **Acquire** — runs DuckDB SQL for filtered slices (`opendata-query_rows`) or pulls full datasets (`opendata-materialize_dataset`).
-5. **Save** — writes results to the shared workspace via the local saver MCP (`save_curated_csv` / `save_curated_json` + `save_meta` for provenance).
+5. **Save** — writes results to the shared workspace via in-process tools (`save_curated_csv` / `save_curated_json` + `save_meta` for provenance) in `agent/tools/local_io.py`.
 6. **Report** — returns file paths and a one-line summary; **never inlines the raw data into the response**.
 
 ---
 
 ## Features
 
-- **Two MCP toolsets in one agent** — Twinkle Hub external (data source) + local saver (file I/O), wired transparently into a single agent.
+- **Race-resolved MCP architecture** — the external Twinkle Hub is accessed via **per-request `FunctionTool` ClientSession** (each tool call opens and closes its own streamable-http MCP session inside the awaited body); local file I/O runs **in-process** (no separate MCP container). Zero global `McpToolset` sessions → free of the to_a2a anyio cancel-scope race (google/adk-python #5729 / #4454).
 - **52,960 datasets, 19 domains** — environment, real estate, government procurement, health, education, transport, and more.
 - **DuckDB SQL queries** — push filtering and ordering into the data layer rather than pulling everything client-side.
 - **Provenance sidecars** — every CSV ships a `<file>.meta.json` with `dataset_id`, `agency`, `query`, `trace_id`, `fetched_at`, `columns`. Downstream agents know exactly what they're reading.
@@ -81,24 +82,23 @@ costaff-agent-twinkle-hub/
 │   ├── instruction/
 │   │   ├── __init__.py                # build_instruction() — placeholder substitution
 │   │   └── system.md                  # Agent system prompt
-│   ├── mcp_toolsets/__init__.py       # Loads 2+ MCP toolsets (Twinkle Hub + local saver)
+│   ├── mcp_toolsets/__init__.py       # Returns [] — no global McpToolset
+│   ├── tools/                         # In-process function tools (replace the old separate MCP server)
+│   │   ├── twinkle_hub.py             # Per-request `opendata-*` wrappers (5 tools); each opens its own streamable-http ClientSession in the awaited body
+│   │   ├── local_io.py                # 6 file-I/O fns ported in-process: get_today_utc, save_curated_csv/json, save_meta, list_curated, read_curated
+│   │   ├── costaff_api.py             # 4 manager-core tools via httpx shim
+│   │   └── _http.py
 │   ├── models/                        # Gemini / LiteLLM model selector
 │   ├── skills/                        # ADK Skills (auto-discovered)
 │   │   ├── dataset-curation/SKILL.md
 │   │   ├── realestate-lookup/SKILL.md
 │   │   └── aqi-environment/SKILL.md
+│   ├── progress.py                    # Live panel callbacks (before_model / before/after_tool)
 │   ├── sub_agents/__init__.py
 │   ├── Dockerfile
 │   └── requirements.txt
-├── mcp/                               # Local saver MCP (port 8083)
-│   ├── server.py
-│   ├── core.py                        # FastMCP instance + safe_my_shared() path validator
-│   ├── tools/
-│   │   ├── __init__.py
-│   │   └── data_io.py                 # 6 IO tools: get_today_utc, save_curated_csv/json, save_meta, list_curated, read_curated
-│   ├── Dockerfile
-│   └── requirements.txt
-├── docker-compose.yaml                # 2 services: agent + local saver MCP
+├── mcp/                               # DEPRECATED — kept for history; logic ported to agent/tools/local_io.py
+├── docker-compose.yaml                # 1 service: agent (the old costaff-mcp-twinkle-hub container has been removed)
 ├── .env.template
 └── costaff.agent.json                 # Manifest (used by costaff agent add)
 ```
@@ -177,7 +177,7 @@ The CLI clones the repo, generates `compose-fragment.yaml`, registers the agent 
 | `TWINKLE_HUB_API_KEY` | ✅ | — | Twinkle Hub virtual API key (`sk-...`), Bearer auth for the external MCP |
 | `GOOGLE_API_KEY` | ✅ (gemini provider) | — | Google Gemini API key |
 | `TWINKLE_HUB_EXTERNAL_MCP_URL` | ❌ | `https://api.twinkleai.tw/mcp/` | Override only if Twinkle Hub publishes a new endpoint |
-| `MCP_TWINKLE_HUB_LOCAL_URL` | ❌ | `http://costaff-mcp-twinkle-hub:8083/mcp` | Internal local saver MCP URL |
+| ~~`MCP_TWINKLE_HUB_LOCAL_URL`~~ | — | — | **Removed** — local I/O is now in-process (no separate MCP container) |
 | `COSTAFF_AGENT_MODEL_PROVIDER` | ❌ | `gemini` | `gemini` or `litellm` |
 | `TWINKLE_HUB_AGENT_MODEL` | ❌ | `gemini-2.5-flash` | Model name for Gemini provider |
 | `LITELLM_MODEL_NAME` | ❌ | — | Model name for LiteLLM provider |
@@ -192,28 +192,36 @@ The CLI clones the repo, generates `compose-fragment.yaml`, registers the agent 
 
 ## MCP Tools
 
-The agent loads tools from two MCP servers transparently:
+The agent reaches the external Twinkle Hub via per-request `FunctionTool` wrappers and runs file I/O in-process. Zero global `McpToolset` — see "Race resolution" below.
 
-### Twinkle Hub external MCP (`api.twinkleai.tw/mcp/`)
+### Twinkle Hub external (`api.twinkleai.tw/mcp/`, per-request)
+
+Each tool below is a native ADK `FunctionTool` in `agent/tools/twinkle_hub.py` that opens its own streamable-http `ClientSession` strictly inside the awaited call body and closes it on return. The hyphenated names match the upstream Twinkle Hub MCP and remain identical to the LLM.
 
 | Tool | Description |
 |---|---|
 | `opendata-list_domains` | List all 19 top-level Twinkle Hub domains |
 | `opendata-search_datasets` | Search datasets by keyword, domain, agency, format, etc. |
 | `opendata-get_dataset` | Inspect a dataset's schema, columns, row count, license, freshness |
-| `opendata-query_rows` | Run DuckDB SQL against a dataset (filtered slice) |
+| `opendata-query_rows` | Run DuckDB SQL against a dataset (filtered slice). Includes a deterministic "extraction guard" that appends a corrective when a no-`GROUP BY` raw pull exceeds the row threshold (`TWINKLE_HUB_RAW_PULL_LIMIT`), nudging the LLM toward aggregate SQL for trend/distribution analysis. |
 | `opendata-materialize_dataset` | Force download + transform of a full dataset |
 
-### Local saver MCP (built into this repo, port 8083)
+### Local I/O (in-process, no MCP session)
+
+Ported from the former `mcp/tools/data_io.py` into `agent/tools/local_io.py`. The agent container already mounts the shared workspace, so these run as plain async function tools — no separate `costaff-mcp-twinkle-hub` container needed. Errors are caught and returned as `[ERROR] …` strings (an in-process FunctionTool that raises would abort the whole A2A request).
 
 | Tool | Description |
 |---|---|
 | `get_today_utc()` | Return today's UTC date as `{compact: 'YYYYMMDD', iso: 'YYYY-MM-DD'}`. Always called once at task start; never let the agent guess a date. |
-| `save_curated_csv(rows_json, columns_json, filename)` | Write a flat CSV to the agent's shared slot |
+| `save_curated_csv(rows_json, columns_json, filename)` | Write a flat CSV to the agent's shared slot. Accepts the absolute path returned by a prior call as well as a relative path inside the slot. |
 | `save_curated_json(data_json, filename)` | Write nested / non-tabular JSON |
 | `save_meta(...)` | Write a `<filename>.meta.json` provenance sidecar |
 | `list_curated(subdir)` | List previously saved files (avoid re-fetching the same dataset) |
 | `read_curated(filename)` | Read back own saved file (200 KB cap) |
+
+### Race resolution (why this is per-request + in-process)
+
+This agent is the production response to google/adk-python #5729 / #4454 (anyio cancel-scope race under `to_a2a()` multi-agent + streamable-http MCP). The race scales with the number of *concurrent global `McpToolset` sessions* held in one agent process; 2+ sessions race fatally, 1 session is ≈0, and 0 sessions is structurally race-free. By moving the external Twinkle Hub to a per-request `FunctionTool` (the ADK maintainer's recommended workaround, adapted to preserve precise tool args) and the local saver to in-process functions, this agent holds **zero global `McpToolset` sessions** — the cancel-scope race cannot occur by construction. The pattern is recommended for any agent that must talk to an unavoidable 3rd-party streamable-http MCP it doesn't control.
 
 ---
 

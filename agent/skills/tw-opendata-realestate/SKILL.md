@@ -1,6 +1,6 @@
 ---
 name: tw-opendata-realestate
-description: Query Taiwan 不動產實價登錄 (LVR Lien Valuation Registry) via Twinkle Hub MCP. 內政部地政司全國 2012 年起公開的不動產買賣/租賃/預售三類成交資料, 涵蓋 6 都+16 縣, 含建物坪數/單價/地段/樓層/型態。3 個 synthetic datasets: `lvr-trades` (買賣)、`lvr-rentals` (租賃)、`lvr-presale` (預售)。Use for 房價分析 / 預售屋成交 / 租金行情 / 學區比價 / 都更前後價格變化 / 投資物件 due diligence。繁體中文 corpus, 內政部地政司公開資料。
+description: "Query Taiwan 不動產實價登錄 (LVR Lien Valuation Registry) via Twinkle Hub MCP. 內政部地政司全國 2012 年起公開的不動產買賣/租賃/預售三類成交資料, 涵蓋 6 都+16 縣, 含建物坪數/單價/地段/樓層/型態。3 個 synthetic datasets: `lvr-trades` (買賣)、`lvr-rentals` (租賃)、`lvr-presale` (預售)。Use for 房價分析 / 預售屋成交 / 租金行情 / 學區比價 / 都更前後價格變化 / 投資物件 due diligence。繁體中文 corpus, 內政部地政司公開資料。"
 license: Source data 政府資料開放授權條款-1版 (內政部地政司). Skill itself Apache-2.0.
 compatibility: Requires Twinkle Hub MCP endpoint with `search_datasets` + `query_rows` tools (LVR via SQL over synthetic dataset_ids).
 metadata:

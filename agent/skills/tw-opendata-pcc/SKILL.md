@@ -1,7 +1,7 @@
 ---
 name: tw-opendata-pcc
 description: Query 政府電子採購網 (PCC, Public Construction Commission) 招標決標公告 via Twinkle Hub MCP. 我們 mirror 行政院公共工程委員會 PCC 半月 XML, 累積 162,000+ 筆 (含招標公告 + 決標公告), 涵蓋 2015-04 至今全國中央/地方/國營事業政府採購。每日 cron 自動更新。可查標案名稱/機關/採購類型/決標金額/得標廠商/聯絡電話/廠商地址/未得標廠商。Use for 政府採購情報 / 廠商商業情報 / 法人 due diligence / 政府支出分析 / 公共工程追蹤 / 標案投資判斷。繁體中文 corpus, PCC 政府電子採購網公開資料。
-license: Source data 公開取得方式: PCC 半月 XML 下載 (政府資料開放授權條款-1版). Skill itself Apache-2.0.
+license: "Source data 公開取得方式: PCC 半月 XML 下載 (政府資料開放授權條款-1版). Skill itself Apache-2.0."
 compatibility: Requires Twinkle Hub MCP endpoint with `query_rows` against `pcc-tender` synthetic dataset.
 metadata:
   corpus: pcc

@@ -1,7 +1,7 @@
 {
   "protocol_version": "1.0",
   "name": "costaff-agent-twinkle-hub",
-  "version": "0.1.0-alpha-1",
+  "version": "0.1.0-alpha-2",
   "description": "[Specialty] Taiwan open data acquisition and curation. [Capability] Search, query, and materialize datasets from Twinkle Hub MCP across 19 domains (environment, real estate, procurement, etc.) using DuckDB SQL. [Output] Curated CSV/JSON files saved to shared workspace, ready for downstream analysis agents.",
   "a2a_service": "agent-twinkle-hub",
   "port": 8081,

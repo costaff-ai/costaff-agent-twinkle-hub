@@ -6,6 +6,19 @@ All notable changes to this project are recorded here. Format follows
 
 ## [Unreleased]
 
+## [0.1.0-alpha-2] - 2026-06-14
+
+### Added
+
+- 20 `tw-opendata` domain skills.
+- Instruction now loads the matching `tw-opendata` domain skill before
+  querying.
+
+### Changed
+
+- Upgraded `google-adk` 2.0.0 → 2.1.0.
+- Version bumped to `0.1.0-alpha-2`.
+
 ## [0.1.0-alpha-1] - 2026-05-27
 
 First tagged pre-release. Taiwan open-data agent — queries 19 datasets through Twinkle Hub MCP, materializes curated CSV/JSON to shared workspace.

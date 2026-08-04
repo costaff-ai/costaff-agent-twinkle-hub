@@ -6,6 +6,12 @@ All notable changes to this project are recorded here. Format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-04
+
+First stable release. No code changes since `v0.1.0-alpha-2`; the tag aligns
+this agent with the CoStaff v0.1.0 ecosystem release so
+`costaff update --all --tag v0.1.0` resolves here too.
+
 ## [0.1.0-alpha-2] - 2026-06-14
 
 ### Added
